@@ -71,6 +71,7 @@ static CLI_HANDLERS: LazyLock<Vec<CliModule>> = LazyLock::new(|| {
         cli::modulo::new(),
         cli::env_path::new(),
         cli::service::new(),
+        cli::settings::new(),
         cli::workaround::new(),
         cli::package::new(),
         cli::match_cli::new(),
@@ -455,6 +456,10 @@ SubCommand::with_name("install")
             .about("Attempt to disable secure input by automating the common steps."),
         )
         .about("A collection of workarounds to solve some common problems."),
+    )
+    .subcommand(
+      SubCommand::with_name("settings")
+        .about("Open the Espanso settings and snippet manager"),
     )
     .subcommand(
       SubCommand::with_name("worker")

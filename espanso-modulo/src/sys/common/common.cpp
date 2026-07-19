@@ -20,7 +20,9 @@
 #include "common.h"
 
 #ifdef __WXMSW__
+#include <dwmapi.h>
 #include <windows.h>
+#pragma comment(lib, "dwmapi.lib")
 #endif
 #ifdef __WXOSX__
 #include "mac.h"
@@ -78,5 +80,41 @@ void Activate(wxFrame *frame) {
 void SetupWindowStyle(wxFrame *frame) {
 #ifdef __WXOSX__
     SetWindowStyles((NSWindow *)frame->MacGetTopLevelWindowRef());
+#endif
+}
+
+bool IsSystemDarkMode() {
+#ifdef __WXMSW__
+    DWORD appsUseLightTheme = 1;
+    DWORD valueSize = sizeof(appsUseLightTheme);
+    const LSTATUS status = RegGetValueW(
+        HKEY_CURRENT_USER,
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+        L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &appsUseLightTheme,
+        &valueSize);
+
+    return status == ERROR_SUCCESS && appsUseLightTheme == 0;
+#elif wxCHECK_VERSION(3, 1, 3)
+    return wxSystemSettings::GetAppearance().IsDark();
+#else
+    const wxColour bg = wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW);
+    const wxColour fg = wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOWTEXT);
+    const unsigned int bgSum = bg.Red() + bg.Blue() + bg.Green();
+    const unsigned int fgSum = fg.Red() + fg.Blue() + fg.Green();
+    return fgSum > bgSum;
+#endif
+}
+
+void ApplyDarkTitleBar(wxWindow *window, bool isDark) {
+#ifdef __WXMSW__
+    BOOL enabled = isDark ? TRUE : FALSE;
+    HWND handle = static_cast<HWND>(window->GetHandle());
+
+    if (FAILED(DwmSetWindowAttribute(handle, 20, &enabled, sizeof(enabled)))) {
+        DwmSetWindowAttribute(handle, 19, &enabled, sizeof(enabled));
+    }
+#else
+    (void)window;
+    (void)isDark;
 #endif
 }

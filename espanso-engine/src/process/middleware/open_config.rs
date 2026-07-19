@@ -71,6 +71,20 @@ impl Middleware for ConfigMiddleware<'_> {
                 .wait();
             return Event::caused_by(event.source_id, EventType::NOOP);
         }
+        if matches!(event.etype, EventType::ShowSettings) {
+            match env::current_exe().and_then(|executable| {
+                Command::new(executable)
+                    .arg("--config_dir")
+                    .arg(config_path)
+                    .arg("settings")
+                    .spawn()
+                    .map(|_| ())
+            }) {
+                Ok(()) => {}
+                Err(err) => error!("unable to open settings: {err}"),
+            }
+            return Event::caused_by(event.source_id, EventType::NOOP);
+        }
         event
     }
 }

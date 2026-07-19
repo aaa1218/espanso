@@ -964,6 +964,7 @@ dependencies = [
  "simplelog",
  "sysinfo",
  "tempdir",
+ "tempfile",
  "thiserror 1.0.56",
  "widestring",
  "windows",

@@ -111,6 +111,28 @@ pub struct SearchMetadata {
     pub hintText: *const ::std::os::raw::c_char,
 }
 
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct SnippetMetadata {
+    pub source_index: c_int,
+    pub label: *const c_char,
+    pub trigger: *const c_char,
+    pub replace: *const c_char,
+    pub editable: c_int,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct SettingsMetadata {
+    pub window_icon_path: *const c_char,
+    pub snippets: *const SnippetMetadata,
+    pub snippets_count: c_int,
+    pub search_shortcut: *const c_char,
+    pub show_icon: c_int,
+    pub show_notifications: c_int,
+    pub auto_restart: c_int,
+}
+
 pub const WIZARD_DETECTED_OS_UNKNOWN: i32 = 0;
 pub const WIZARD_DETECTED_OS_X11: i32 = 1;
 pub const WIZARD_DETECTED_OS_WAYLAND: i32 = 2;
@@ -221,6 +243,21 @@ extern "C" {
     );
 
     pub(crate) fn update_items(app: *const c_void, items: *const SearchItem, itemCount: c_int);
+
+    // SETTINGS
+    pub(crate) fn interop_show_settings(
+        metadata: *const SettingsMetadata,
+        callback: extern "C" fn(
+            snippets: *const SnippetMetadata,
+            snippets_count: c_int,
+            search_shortcut: *const c_char,
+            show_icon: c_int,
+            show_notifications: c_int,
+            auto_restart: c_int,
+            result: *mut c_void,
+        ),
+        result: *mut c_void,
+    );
 
     // WIZARD
     pub(crate) fn interop_show_wizard(metadata: *const WizardMetadata) -> c_int;

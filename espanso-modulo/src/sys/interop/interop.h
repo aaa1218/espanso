@@ -93,6 +93,26 @@ typedef struct SearchMetadata {
     const char *hintText;
 } SearchMetadata;
 
+// SETTINGS
+
+typedef struct SnippetMetadata {
+    const int source_index;
+    const char *label;
+    const char *trigger;
+    const char *replace;
+    const int editable;
+} SnippetMetadata;
+
+typedef struct SettingsMetadata {
+    const char *window_icon_path;
+    const SnippetMetadata *snippets;
+    const int snippets_count;
+    const char *search_shortcut;
+    const int show_icon;
+    const int show_notifications;
+    const int auto_restart;
+} SettingsMetadata;
+
 // WIZARD
 
 const int MIGRATE_RESULT_SUCCESS = 0;

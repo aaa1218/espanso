@@ -33,4 +33,8 @@ void Activate(wxFrame *frame);
 
 void SetupWindowStyle(wxFrame *frame);
 
+bool IsSystemDarkMode();
+
+void ApplyDarkTitleBar(wxWindow *window, bool isDark);
+
 #endif

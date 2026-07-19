@@ -132,6 +132,7 @@ fn build_native() {
         .cpp(true)
         .file("src/sys/form/form.cpp")
         .file("src/sys/search/search.cpp")
+        .file("src/sys/settings/settings.cpp")
         .file("src/sys/common/common.cpp")
         .file("src/sys/wizard/wizard.cpp")
         .file("src/sys/wizard/wizard_gui.cpp")
@@ -284,6 +285,7 @@ fn build_native() {
         .file("src/sys/form/form.cpp")
         .file("src/sys/common/common.cpp")
         .file("src/sys/search/search.cpp")
+        .file("src/sys/settings/settings.cpp")
         .file("src/sys/wizard/wizard.cpp")
         .file("src/sys/wizard/wizard_gui.cpp")
         .file("src/sys/welcome/welcome.cpp")
@@ -478,6 +480,7 @@ fn build_native() {
         .cpp(true)
         .file("src/sys/form/form.cpp")
         .file("src/sys/search/search.cpp")
+        .file("src/sys/settings/settings.cpp")
         .file("src/sys/common/common.cpp")
         .file("src/sys/wizard/wizard.cpp")
         .file("src/sys/wizard/wizard_gui.cpp")
@@ -504,5 +507,27 @@ fn build_native() {
 }
 
 fn main() {
+    for source in [
+        "src/sys/common/common.cpp",
+        "src/sys/common/common.h",
+        "src/sys/common/mac.h",
+        "src/sys/common/mac.mm",
+        "src/sys/form/form.cpp",
+        "src/sys/interop/interop.h",
+        "src/sys/search/search.cpp",
+        "src/sys/settings/settings.cpp",
+        "src/sys/textview/textview.cpp",
+        "src/sys/textview/textview_gui.cpp",
+        "src/sys/troubleshooting/troubleshooting.cpp",
+        "src/sys/troubleshooting/troubleshooting_gui.cpp",
+        "src/sys/welcome/welcome.cpp",
+        "src/sys/welcome/welcome_gui.cpp",
+        "src/sys/wizard/wizard.cpp",
+        "src/sys/wizard/wizard_gui.cpp",
+    ] {
+        println!("cargo:rerun-if-changed={source}");
+    }
+    println!("cargo:rerun-if-changed=vendor/{WX_WIDGETS_ARCHIVE_NAME}");
+
     build_native();
 }

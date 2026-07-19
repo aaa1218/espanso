@@ -49,6 +49,10 @@ const int HELP_TEXT_FONT_SIZE = 10;
 
 const wxColour SELECTION_LIGHT_BG = wxColour(164, 210, 253);
 const wxColour SELECTION_DARK_BG = wxColour(49, 88, 126);
+const wxColour DARK_FRAME_BG = wxColour(32, 33, 36);
+const wxColour DARK_CONTROL_BG = wxColour(43, 45, 48);
+const wxColour DARK_TEXT = wxColour(245, 245, 245);
+const wxColour DARK_MUTED_TEXT = wxColour(180, 184, 191);
 
 // https://docs.wxwidgets.org/stable/classwx_frame.html
 const int MIN_WIDTH = 500;
@@ -100,6 +104,10 @@ ResultListBox::ResultListBox(wxWindow *parent, bool isDark, const wxWindowID id,
                              const wxPoint &pos, const wxSize &size)
     : wxHtmlListBox(parent, id, pos, size, 0) {
     this->isDark = isDark;
+    if (isDark) {
+        SetBackgroundColour(DARK_FRAME_BG);
+        SetForegroundColour(DARK_TEXT);
+    }
     SetMargins(5, 5);
     Refresh();
 }
@@ -113,10 +121,11 @@ void ResultListBox::OnDrawBackground(wxDC &dc, const wxRect &rect,
             dc.SetBrush(wxBrush(SELECTION_LIGHT_BG));
         }
     } else {
-        dc.SetBrush(*wxTRANSPARENT_BRUSH);
+        dc.SetBrush(wxBrush(isDark ? DARK_FRAME_BG
+                                   : GetBackgroundColour()));
     }
     dc.SetPen(*wxTRANSPARENT_PEN);
-    dc.DrawRectangle(0, 0, rect.GetRight(), rect.GetBottom());
+    dc.DrawRectangle(rect);
 }
 
 // Helper function to escape HTML special characters
@@ -131,6 +140,7 @@ wxString EscapeHtml(const wxString &str) {
 
 wxString ResultListBox::OnGetItem(size_t n) const {
     wxString textColor = isDark ? "white" : "";
+    wxString shortcutColor = isDark ? "#b4b8bf" : "#636e72";
     wxString shortcut =
         (n < 8) ? wxString::Format(wxT("Alt+%i"), (int)n + 1) : " ";
 
@@ -141,9 +151,9 @@ wxString ResultListBox::OnGetItem(size_t n) const {
 
     wxString result = wxString::Format(
         wxT("<font color='%s'><table width='100%%'><tr><td>%s</td><td "
-            "align='right'><b>%s</b> <font color='#636e72'> "
+            "align='right'><b>%s</b> <font color='%s'> "
             "%s</font></td></tr></table></font>"),
-        textColor, escapedLabel, escapedTrigger, shortcut);
+        textColor, escapedLabel, escapedTrigger, shortcutColor, shortcut);
 
     return result;
 }
@@ -188,23 +198,22 @@ bool SearchApp::OnInit() {
     Activate(frame);
     return true;
 }
+
 SearchFrame::SearchFrame(const wxString &title, const wxPoint &pos,
                          const wxSize &size)
     : wxFrame(NULL, wxID_ANY, title, pos, size, DEFAULT_STYLE) {
     wxInitAllImageHandlers();
 
-#if wxCHECK_VERSION(3, 1, 3)
-    bool isDark = wxSystemSettings::GetAppearance().IsDark();
-#else
-    // Workaround needed for previous versions of wxWidgets
-    const wxColour bg = wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW);
-    const wxColour fg = wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOWTEXT);
-    unsigned int bgSum = (bg.Red() + bg.Blue() + bg.Green());
-    unsigned int fgSum = (fg.Red() + fg.Blue() + fg.Green());
-    bool isDark = fgSum > bgSum;
-#endif
+    bool isDark = IsSystemDarkMode();
 
     panel = new wxPanel(this, wxID_ANY);
+    if (isDark) {
+        SetBackgroundColour(DARK_FRAME_BG);
+        SetForegroundColour(DARK_TEXT);
+        panel->SetBackgroundColour(DARK_FRAME_BG);
+        panel->SetForegroundColour(DARK_TEXT);
+        ApplyDarkTitleBar(this, true);
+    }
     wxBoxSizer *vbox = new wxBoxSizer(wxVERTICAL);
     panel->SetSizer(vbox);
 
@@ -235,6 +244,10 @@ SearchFrame::SearchFrame(const wxString &title, const wxPoint &pos,
     wxFont font = searchBar->GetFont();
     font.SetPointSize(SEARCH_BAR_FONT_SIZE);
     searchBar->SetFont(font);
+    if (isDark) {
+        searchBar->SetBackgroundColour(DARK_CONTROL_BG);
+        searchBar->SetForegroundColour(DARK_TEXT);
+    }
     topBox->Add(searchBar, 1, wxEXPAND | wxALL, 10);
 
     vbox->Add(topBox, 1, wxEXPAND);
@@ -246,6 +259,10 @@ SearchFrame::SearchFrame(const wxString &title, const wxPoint &pos,
         wxFont helpFont = helpText->GetFont();
         helpFont.SetPointSize(HELP_TEXT_FONT_SIZE);
         helpText->SetFont(helpFont);
+        if (isDark) {
+            helpText->SetBackgroundColour(DARK_FRAME_BG);
+            helpText->SetForegroundColour(DARK_MUTED_TEXT);
+        }
     }
 
     wxArrayString choices;
