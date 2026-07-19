@@ -527,6 +527,7 @@ fn main() {
     ] {
         println!("cargo:rerun-if-changed={source}");
     }
+    #[cfg(not(target_os = "linux"))]
     println!("cargo:rerun-if-changed=vendor/{WX_WIDGETS_ARCHIVE_NAME}");
 
     build_native();
