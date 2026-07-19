@@ -32,6 +32,7 @@ use espanso_engine::process::ModifierStatusProvider;
 /// after a while.
 const MAXIMUM_MODIFIERS_PRESS_TIME_RECORD: Duration = Duration::from_secs(30);
 
+#[cfg(not(target_os = "windows"))]
 const CONFLICTING_MODIFIERS: &[Modifier] = &[
     Modifier::Ctrl,
     Modifier::Alt,
@@ -59,6 +60,18 @@ impl ModifierStateStore {
         }
     }
 
+    #[cfg(target_os = "windows")]
+    pub fn is_any_conflicting_modifier_pressed(&self) -> bool {
+        use windows::Win32::UI::Input::KeyboardAndMouse::{
+            GetAsyncKeyState, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
+        };
+
+        [VK_CONTROL, VK_SHIFT, VK_MENU, VK_LWIN, VK_RWIN]
+            .iter()
+            .any(|key| unsafe { GetAsyncKeyState(key.0 as i32) } < 0)
+    }
+
+    #[cfg(not(target_os = "windows"))]
     pub fn is_any_conflicting_modifier_pressed(&self) -> bool {
         let mut state = self.state.lock().expect("unable to obtain modifier state");
         let mut is_any_modifier_pressed = false;

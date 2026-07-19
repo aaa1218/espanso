@@ -20,6 +20,18 @@ pub struct EditableSnippet {
     pub editable: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SnippetMutation {
+    Add(EditableSnippet),
+    Update(EditableSnippet),
+    Delete(i32),
+}
+
+pub trait SnippetStore {
+    fn load(&self) -> Option<Vec<EditableSnippet>>;
+    fn apply(&self, mutation: SnippetMutation) -> bool;
+}
+
 #[derive(Debug)]
 pub struct SettingsOptions {
     pub window_icon_path: Option<String>,

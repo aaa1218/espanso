@@ -57,6 +57,9 @@ impl Middleware for DelayForModifierReleaseMiddleware<'_> {
             while self.provider.is_any_conflicting_modifier_pressed() {
                 if Instant::now().duration_since(start) > MODIFIER_DELAY_TIMEOUT {
                     warn!("injection delay has timed out, please release the modifier keys (SHIFT, CTRL, ALT, CMD) to trigger an expansion");
+                    if matches!(event.etype, EventType::CaptureSelection) {
+                        return Event::caused_by(event.source_id, EventType::NOOP);
+                    }
                     break;
                 }
 

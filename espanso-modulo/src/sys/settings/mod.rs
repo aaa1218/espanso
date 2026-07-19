@@ -12,7 +12,7 @@
 use std::ffi::{c_char, c_int, c_void, CStr, CString};
 
 use crate::{
-    settings::{EditableSnippet, SettingsOptions, SettingsResult},
+    settings::{EditableSnippet, SettingsOptions, SettingsResult, SnippetMutation, SnippetStore},
     sys::{
         interop::{SettingsMetadata, SnippetMetadata},
         util::convert_to_cstring_or_null,
@@ -50,7 +50,11 @@ impl OwnedSnippet {
     }
 }
 
-pub fn show(options: SettingsOptions) -> Option<SettingsResult> {
+struct SnippetStoreContext<'a> {
+    store: &'a dyn SnippetStore,
+}
+
+pub fn show(options: SettingsOptions, snippet_store: &dyn SnippetStore) -> Option<SettingsResult> {
     let (_window_icon_path, window_icon_path_ptr) =
         convert_to_cstring_or_null(options.window_icon_path);
     let search_shortcut = CString::new(options.search_shortcut)
@@ -83,6 +87,9 @@ pub fn show(options: SettingsOptions) -> Option<SettingsResult> {
     };
 
     let mut result: Option<SettingsResult> = None;
+    let mut snippet_store_context = SnippetStoreContext {
+        store: snippet_store,
+    };
 
     extern "C" fn result_callback(
         snippets: *const SnippetMetadata,
@@ -142,11 +149,63 @@ pub fn show(options: SettingsOptions) -> Option<SettingsResult> {
         }
     }
 
+    extern "C" fn load_snippets_callback(app: *mut c_void, data: *mut c_void) {
+        let context = unsafe { &*data.cast::<SnippetStoreContext<'_>>() };
+        let Some(snippets) = context.store.load() else {
+            return;
+        };
+        let owned_snippets: Vec<OwnedSnippet> =
+            snippets.into_iter().map(OwnedSnippet::new).collect();
+        let snippets: Vec<SnippetMetadata> =
+            owned_snippets.iter().map(OwnedSnippet::metadata).collect();
+        unsafe {
+            super::interop::interop_update_settings_snippets(
+                app,
+                snippets.as_ptr(),
+                snippets.len() as c_int,
+            );
+        }
+    }
+
+    extern "C" fn mutate_snippet_callback(
+        operation: c_int,
+        snippet: *const SnippetMetadata,
+        data: *mut c_void,
+    ) -> c_int {
+        let context = unsafe { &*data.cast::<SnippetStoreContext<'_>>() };
+        let Some(snippet) = (unsafe { snippet.as_ref() }) else {
+            return 0;
+        };
+        let editable_snippet = EditableSnippet {
+            source_index: snippet.source_index,
+            label: unsafe { CStr::from_ptr(snippet.label) }
+                .to_string_lossy()
+                .into_owned(),
+            trigger: unsafe { CStr::from_ptr(snippet.trigger) }
+                .to_string_lossy()
+                .into_owned(),
+            replace: unsafe { CStr::from_ptr(snippet.replace) }
+                .to_string_lossy()
+                .into_owned(),
+            editable: snippet.editable == 1,
+        };
+        let mutation = match operation {
+            0 => SnippetMutation::Add(editable_snippet),
+            1 => SnippetMutation::Update(editable_snippet),
+            2 => SnippetMutation::Delete(editable_snippet.source_index),
+            _ => return 0,
+        };
+        i32::from(context.store.apply(mutation))
+    }
+
     unsafe {
         super::interop::interop_show_settings(
             &metadata,
             result_callback,
             std::ptr::from_mut(&mut result).cast::<c_void>(),
+            load_snippets_callback,
+            mutate_snippet_callback,
+            std::ptr::from_mut(&mut snippet_store_context).cast::<c_void>(),
         );
     }
 

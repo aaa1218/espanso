@@ -20,6 +20,7 @@
 #include <wx/listctrl.h>
 #include <wx/notebook.h>
 #include <wx/choice.h>
+#include <wx/timer.h>
 
 const wxColour SETTINGS_DARK_BG = wxColour(32, 33, 36);
 const wxColour SETTINGS_DARK_CONTROL_BG = wxColour(43, 45, 48);
@@ -34,10 +35,17 @@ typedef void (*SettingsResultCallback)(const SnippetMetadata *snippets,
                                        int show_icon,
                                        int show_notifications,
                                        int auto_restart, void *result);
+typedef void (*SettingsLoadSnippetsCallback)(void *app, void *data);
+typedef int (*SettingsMutateSnippetCallback)(int operation,
+                                             const SnippetMetadata *snippet,
+                                             void *data);
 
 SettingsMetadata *settings_metadata = nullptr;
 SettingsResultCallback settings_result_callback = nullptr;
 void *settings_result_data = nullptr;
+SettingsLoadSnippetsCallback settings_load_snippets_callback = nullptr;
+SettingsMutateSnippetCallback settings_mutate_snippet_callback = nullptr;
+void *settings_snippet_data = nullptr;
 
 struct SnippetData {
     int source_index;
@@ -129,12 +137,16 @@ class SnippetDialog : public wxDialog {
 class SettingsFrame : public wxFrame {
   public:
     SettingsFrame();
+    void ReplaceSnippets(const SnippetMetadata *metadata, int count);
 
   private:
     std::vector<SnippetData> snippets;
     std::vector<size_t> visible_snippets;
     bool isDark = false;
+    wxTimer refreshTimer;
 
+    wxPanel *rootPanel = nullptr;
+    wxNotebook *notebook = nullptr;
     wxTextCtrl *filter = nullptr;
     wxListCtrl *snippetList = nullptr;
     wxButton *editButton = nullptr;
@@ -146,12 +158,19 @@ class SettingsFrame : public wxFrame {
     wxCheckBox *showIcon = nullptr;
     wxCheckBox *showNotifications = nullptr;
     wxCheckBox *autoRestart = nullptr;
+    wxButton *saveButton = nullptr;
+    wxButton *cancelButton = nullptr;
 
     void RefreshSnippets();
+    void ReloadSnippets();
+    bool PersistSnippet(int operation, const SnippetData &snippet);
     int SelectedSnippetIndex() const;
     void UpdateActionState();
+    void UpdateSettingsActions();
     void OnFilterChanged(wxCommandEvent &event);
     void OnSelectionChanged(wxListEvent &event);
+    void OnNotebookChanged(wxBookCtrlEvent &event);
+    void OnRefreshTimer(wxTimerEvent &event);
     void OnAdd(wxCommandEvent &event);
     void OnEdit(wxCommandEvent &event);
     void OnDelete(wxCommandEvent &event);
@@ -161,7 +180,8 @@ class SettingsFrame : public wxFrame {
 
 SettingsFrame::SettingsFrame()
     : wxFrame(nullptr, wxID_ANY, wxT("Espanso Settings"), wxDefaultPosition,
-              wxSize(860, 620), wxDEFAULT_FRAME_STYLE) {
+              wxSize(860, 620), wxDEFAULT_FRAME_STYLE),
+      refreshTimer(this) {
     isDark = IsSystemDarkMode();
     if (settings_metadata->window_icon_path) {
         setFrameIcon(wxString::FromUTF8(settings_metadata->window_icon_path),
@@ -176,9 +196,9 @@ SettingsFrame::SettingsFrame()
             snippet.replace ? snippet.replace : "", snippet.editable == 1});
     }
 
-    wxPanel *rootPanel = new wxPanel(this);
+    rootPanel = new wxPanel(this);
     wxBoxSizer *root = new wxBoxSizer(wxVERTICAL);
-    wxNotebook *notebook = new wxNotebook(rootPanel, wxID_ANY);
+    notebook = new wxNotebook(rootPanel, wxID_ANY);
 
     wxPanel *snippetsPage = new wxPanel(notebook);
     wxBoxSizer *snippetsRoot = new wxBoxSizer(wxVERTICAL);
@@ -273,9 +293,8 @@ SettingsFrame::SettingsFrame()
     root->Add(notebook, 1, wxEXPAND | wxALL, 12);
     wxBoxSizer *actions = new wxBoxSizer(wxHORIZONTAL);
     actions->AddStretchSpacer();
-    wxButton *cancelButton =
-        new wxButton(rootPanel, wxID_CANCEL, wxT("Cancel"));
-    wxButton *saveButton = new wxButton(rootPanel, wxID_SAVE, wxT("Save"));
+    cancelButton = new wxButton(rootPanel, wxID_CANCEL, wxT("Cancel"));
+    saveButton = new wxButton(rootPanel, wxID_SAVE, wxT("Save"));
     actions->Add(cancelButton, 0, wxRIGHT, 8);
     actions->Add(saveButton, 0);
     root->Add(actions, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 12);
@@ -317,10 +336,67 @@ SettingsFrame::SettingsFrame()
     deleteButton->Bind(wxEVT_BUTTON, &SettingsFrame::OnDelete, this);
     saveButton->Bind(wxEVT_BUTTON, &SettingsFrame::OnSave, this);
     cancelButton->Bind(wxEVT_BUTTON, &SettingsFrame::OnCancel, this);
+    notebook->Bind(wxEVT_NOTEBOOK_PAGE_CHANGED,
+                   &SettingsFrame::OnNotebookChanged, this);
+    Bind(wxEVT_TIMER, &SettingsFrame::OnRefreshTimer, this);
 
     RefreshSnippets();
     UpdateActionState();
+    UpdateSettingsActions();
+    refreshTimer.Start(500);
     CentreOnScreen();
+}
+
+void SettingsFrame::ReplaceSnippets(const SnippetMetadata *metadata,
+                                    int count) {
+    std::vector<SnippetData> updated;
+    updated.reserve(count > 0 ? static_cast<size_t>(count) : 0);
+    for (int index = 0; index < count; index++) {
+        const SnippetMetadata &snippet = metadata[index];
+        updated.push_back(SnippetData{
+            snippet.source_index, snippet.label ? snippet.label : "",
+            snippet.trigger ? snippet.trigger : "",
+            snippet.replace ? snippet.replace : "", snippet.editable == 1});
+    }
+
+    bool unchanged = updated.size() == snippets.size();
+    for (size_t index = 0; unchanged && index < updated.size(); index++) {
+        const SnippetData &left = updated[index];
+        const SnippetData &right = snippets[index];
+        unchanged = left.source_index == right.source_index &&
+                    left.label == right.label && left.trigger == right.trigger &&
+                    left.replace == right.replace &&
+                    left.editable == right.editable;
+    }
+    if (unchanged) {
+        return;
+    }
+
+    snippets = std::move(updated);
+    RefreshSnippets();
+}
+
+void SettingsFrame::ReloadSnippets() {
+    if (settings_load_snippets_callback) {
+        settings_load_snippets_callback(this, settings_snippet_data);
+    }
+}
+
+bool SettingsFrame::PersistSnippet(int operation, const SnippetData &snippet) {
+    if (!settings_mutate_snippet_callback) {
+        return false;
+    }
+    const SnippetMetadata metadata = {
+        snippet.source_index, snippet.label.c_str(), snippet.trigger.c_str(),
+        snippet.replace.c_str(), snippet.editable ? 1 : 0};
+    if (settings_mutate_snippet_callback(operation, &metadata,
+                                         settings_snippet_data) != 1) {
+        wxMessageBox(wxT("Unable to save the snippet."),
+                     wxT("Espanso Settings"), wxOK | wxICON_ERROR, this);
+        return false;
+    }
+    ReloadSnippets();
+    return true;
 }
 
 void SettingsFrame::RefreshSnippets() {
@@ -370,6 +446,13 @@ void SettingsFrame::UpdateActionState() {
     deleteButton->Enable(index >= 0);
 }
 
+void SettingsFrame::UpdateSettingsActions() {
+    const bool show = notebook->GetSelection() == 1;
+    saveButton->Show(show);
+    cancelButton->Show(show);
+    rootPanel->Layout();
+}
+
 void SettingsFrame::OnFilterChanged(wxCommandEvent &event) {
     RefreshSnippets();
     event.Skip();
@@ -383,6 +466,13 @@ void SettingsFrame::OnSelectionChanged(wxListEvent &event) {
     }
 }
 
+void SettingsFrame::OnNotebookChanged(wxBookCtrlEvent &event) {
+    UpdateSettingsActions();
+    event.Skip();
+}
+
+void SettingsFrame::OnRefreshTimer(wxTimerEvent &) { ReloadSnippets(); }
+
 void SettingsFrame::OnAdd(wxCommandEvent &) {
     SnippetDialog dialog(this, nullptr, isDark);
     if (dialog.ShowModal() != wxID_OK) {
@@ -392,9 +482,8 @@ void SettingsFrame::OnAdd(wxCommandEvent &) {
     const std::string labelValue =
         dialog.GetSnippetLabel().empty() ? triggerValue
                                          : dialog.GetSnippetLabel();
-    snippets.push_back(SnippetData{-1, labelValue, triggerValue,
-                                   dialog.GetSnippetReplacement(), true});
-    RefreshSnippets();
+    PersistSnippet(0, SnippetData{-1, labelValue, triggerValue,
+                                  dialog.GetSnippetReplacement(), true});
 }
 
 void SettingsFrame::OnEdit(wxCommandEvent &) {
@@ -403,7 +492,7 @@ void SettingsFrame::OnEdit(wxCommandEvent &) {
         return;
     }
 
-    SnippetData &snippet = snippets[static_cast<size_t>(index)];
+    SnippetData snippet = snippets[static_cast<size_t>(index)];
     SnippetDialog dialog(this, &snippet, isDark);
     if (dialog.ShowModal() != wxID_OK) {
         return;
@@ -413,7 +502,7 @@ void SettingsFrame::OnEdit(wxCommandEvent &) {
                         : dialog.GetSnippetLabel();
     snippet.trigger = dialog.GetSnippetTrigger();
     snippet.replace = dialog.GetSnippetReplacement();
-    RefreshSnippets();
+    PersistSnippet(1, snippet);
 }
 
 void SettingsFrame::OnDelete(wxCommandEvent &) {
@@ -427,8 +516,7 @@ void SettingsFrame::OnDelete(wxCommandEvent &) {
         return;
     }
 
-    snippets.erase(snippets.begin() + index);
-    RefreshSnippets();
+    PersistSnippet(2, snippets[static_cast<size_t>(index)]);
 }
 
 void SettingsFrame::OnSave(wxCommandEvent &) {
@@ -475,7 +563,10 @@ class SettingsApp : public wxApp {
 
 extern "C" void interop_show_settings(SettingsMetadata *metadata,
                                       SettingsResultCallback callback,
-                                      void *result) {
+                                      void *result,
+                                      SettingsLoadSnippetsCallback load_callback,
+                                      SettingsMutateSnippetCallback mutate_callback,
+                                      void *snippet_data) {
 #ifdef __WXMSW__
     SetProcessDPIAware();
 #endif
@@ -483,8 +574,20 @@ extern "C" void interop_show_settings(SettingsMetadata *metadata,
     settings_metadata = metadata;
     settings_result_callback = callback;
     settings_result_data = result;
+    settings_load_snippets_callback = load_callback;
+    settings_mutate_snippet_callback = mutate_callback;
+    settings_snippet_data = snippet_data;
 
     wxApp::SetInstance(new SettingsApp());
     int argc = 0;
     wxEntry(argc, static_cast<char **>(nullptr));
+}
+
+extern "C" void interop_update_settings_snippets(
+    void *app, const SnippetMetadata *snippets, int snippets_count) {
+    if (!app) {
+        return;
+    }
+    static_cast<SettingsFrame *>(app)->ReplaceSnippets(snippets,
+                                                       snippets_count);
 }

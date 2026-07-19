@@ -174,10 +174,60 @@ fn run_settings(config_root: &Path, runtime_dir: &Path) -> Result<()> {
 
     let match_path = config_root.join("match").join("base.yml");
     let config_path = resolve_default_config_path(config_root);
-    let mut match_document: MatchDocument = read_yaml(&match_path)?;
+    let match_document: MatchDocument = read_yaml(&match_path)?;
     let mut config_document: ConfigDocument = read_yaml(&config_path)?;
 
-    let snippets = match_document
+    let snippets = editable_snippets(&match_document);
+    let snippet_store = FileSnippetStore {
+        match_path: match_path.clone(),
+    };
+
+    let icon_paths = crate::icon::load_icon_paths(runtime_dir)?;
+    let result = espanso_modulo::settings::show(
+        espanso_modulo::settings::SettingsOptions {
+            window_icon_path: icon_paths
+                .wizard_icon
+                .map(|path| path.to_string_lossy().into_owned()),
+            snippets,
+            search_shortcut: config_document
+                .search_shortcut
+                .clone()
+                .unwrap_or_else(|| "ALT+SPACE".to_owned()),
+            snippet_capture_shortcut: config_document
+                .snippet_capture_shortcut
+                .clone()
+                .unwrap_or_else(|| "CTRL+ALT+S".to_owned()),
+            double_tap_key: config_document.double_tap_key.clone().unwrap_or_default(),
+            double_tap_action: config_document
+                .double_tap_action
+                .clone()
+                .unwrap_or_else(|| "OFF".to_owned()),
+            show_icon: config_document.show_icon.unwrap_or(true),
+            show_notifications: config_document.show_notifications.unwrap_or(true),
+            auto_restart: config_document.auto_restart.unwrap_or(true),
+        },
+        &snippet_store,
+    );
+
+    let Some(result) = result else {
+        return Ok(());
+    };
+
+    config_document.search_shortcut = Some(result.search_shortcut);
+    config_document.snippet_capture_shortcut = Some(result.snippet_capture_shortcut);
+    config_document.double_tap_key = Some(result.double_tap_key);
+    config_document.double_tap_action = Some(result.double_tap_action);
+    config_document.show_icon = Some(result.show_icon);
+    config_document.show_notifications = Some(result.show_notifications);
+    config_document.auto_restart = Some(result.auto_restart);
+
+    write_yaml_atomically(&config_path, &config_document)?;
+    Ok(())
+}
+
+#[cfg(feature = "modulo")]
+fn editable_snippets(document: &MatchDocument) -> Vec<espanso_modulo::settings::EditableSnippet> {
+    document
         .matches
         .iter()
         .enumerate()
@@ -197,72 +247,74 @@ fn run_settings(config_root: &Path, runtime_dir: &Path) -> Result<()> {
                 editable: entry.is_editable(),
             }
         })
-        .collect();
+        .collect()
+}
 
-    let icon_paths = crate::icon::load_icon_paths(runtime_dir)?;
-    let result = espanso_modulo::settings::show(espanso_modulo::settings::SettingsOptions {
-        window_icon_path: icon_paths
-            .wizard_icon
-            .map(|path| path.to_string_lossy().into_owned()),
-        snippets,
-        search_shortcut: config_document
-            .search_shortcut
-            .clone()
-            .unwrap_or_else(|| "ALT+SPACE".to_owned()),
-        snippet_capture_shortcut: config_document
-            .snippet_capture_shortcut
-            .clone()
-            .unwrap_or_else(|| "CTRL+ALT+S".to_owned()),
-        double_tap_key: config_document.double_tap_key.clone().unwrap_or_default(),
-        double_tap_action: config_document
-            .double_tap_action
-            .clone()
-            .unwrap_or_else(|| "OFF".to_owned()),
-        show_icon: config_document.show_icon.unwrap_or(true),
-        show_notifications: config_document.show_notifications.unwrap_or(true),
-        auto_restart: config_document.auto_restart.unwrap_or(true),
-    });
+#[cfg(feature = "modulo")]
+struct FileSnippetStore {
+    match_path: PathBuf,
+}
 
-    let Some(result) = result else {
-        return Ok(());
-    };
+#[cfg(feature = "modulo")]
+impl FileSnippetStore {
+    fn apply_mutation(&self, mutation: espanso_modulo::settings::SnippetMutation) -> Result<()> {
+        use espanso_modulo::settings::SnippetMutation;
 
-    let original_matches = match_document.matches;
-    match_document.matches = result
-        .snippets
-        .into_iter()
-        .map(|snippet| {
-            if snippet.source_index >= 0 {
-                let mut entry = original_matches
-                    .get(snippet.source_index as usize)
-                    .cloned()
-                    .context("settings returned an invalid snippet index")?;
-                if snippet.editable {
-                    entry.update_from(&snippet);
-                }
-                Ok(entry)
-            } else {
-                Ok(MatchEntry {
+        let mut document: MatchDocument = read_yaml(&self.match_path)?;
+        match mutation {
+            SnippetMutation::Add(snippet) => {
+                let search_terms = snippet
+                    .trigger
+                    .is_empty()
+                    .then(|| vec![snippet.replace.clone()]);
+                document.matches.push(MatchEntry {
                     label: Some(snippet.label),
                     trigger: (!snippet.trigger.is_empty()).then_some(snippet.trigger),
                     replace: Some(Value::String(snippet.replace)),
+                    search_terms,
                     ..Default::default()
-                })
+                });
             }
-        })
-        .collect::<Result<Vec<_>>>()?;
+            SnippetMutation::Update(snippet) => {
+                let entry = document
+                    .matches
+                    .get_mut(snippet.source_index as usize)
+                    .context("settings returned an invalid snippet index")?;
+                if !entry.is_editable() {
+                    anyhow::bail!("settings tried to edit an advanced snippet");
+                }
+                entry.update_from(&snippet);
+            }
+            SnippetMutation::Delete(source_index) => {
+                if source_index < 0 || source_index as usize >= document.matches.len() {
+                    anyhow::bail!("settings returned an invalid snippet index");
+                }
+                document.matches.remove(source_index as usize);
+            }
+        }
+        write_yaml_atomically(&self.match_path, &document)
+    }
+}
 
-    config_document.search_shortcut = Some(result.search_shortcut);
-    config_document.snippet_capture_shortcut = Some(result.snippet_capture_shortcut);
-    config_document.double_tap_key = Some(result.double_tap_key);
-    config_document.double_tap_action = Some(result.double_tap_action);
-    config_document.show_icon = Some(result.show_icon);
-    config_document.show_notifications = Some(result.show_notifications);
-    config_document.auto_restart = Some(result.auto_restart);
+#[cfg(feature = "modulo")]
+impl espanso_modulo::settings::SnippetStore for FileSnippetStore {
+    fn load(&self) -> Option<Vec<espanso_modulo::settings::EditableSnippet>> {
+        match read_yaml::<MatchDocument>(&self.match_path) {
+            Ok(document) => Some(editable_snippets(&document)),
+            Err(error) => {
+                log::error!("unable to reload snippets in settings: {error:#}");
+                None
+            }
+        }
+    }
 
-    write_yaml_atomically(&match_path, &match_document)?;
-    write_yaml_atomically(&config_path, &config_document)?;
-    Ok(())
+    fn apply(&self, mutation: espanso_modulo::settings::SnippetMutation) -> bool {
+        if let Err(error) = self.apply_mutation(mutation) {
+            log::error!("unable to save snippet from settings: {error:#}");
+            return false;
+        }
+        true
+    }
 }
 
 pub(crate) fn append_captured_snippet(config_root: &Path, text: &str) -> Result<bool> {
@@ -345,6 +397,7 @@ where
 #[cfg(all(test, feature = "modulo"))]
 mod tests {
     use super::*;
+    use espanso_modulo::settings::SnippetStore as _;
 
     #[test]
     fn match_document_preserves_unknown_fields() {
@@ -415,5 +468,57 @@ matches:
             captured.search_terms.as_deref(),
             Some(["First line\nSecond line".to_owned()].as_slice())
         );
+    }
+
+    #[test]
+    fn snippet_store_reloads_external_changes_and_persists_mutations() {
+        use espanso_modulo::settings::{EditableSnippet, SnippetMutation};
+
+        let directory = tempfile::tempdir().unwrap();
+        append_captured_snippet(directory.path(), "Externally captured").unwrap();
+        let store = FileSnippetStore {
+            match_path: directory.path().join("match").join("base.yml"),
+        };
+
+        assert!(store
+            .load()
+            .unwrap()
+            .iter()
+            .any(|snippet| snippet.replace == "Externally captured"));
+
+        assert!(store.apply(SnippetMutation::Add(EditableSnippet {
+            source_index: -1,
+            label: "Manual".to_owned(),
+            trigger: ":manual".to_owned(),
+            replace: "Manual content".to_owned(),
+            editable: true,
+        })));
+        let added = store
+            .load()
+            .unwrap()
+            .into_iter()
+            .find(|snippet| snippet.label == "Manual")
+            .unwrap();
+
+        assert!(store.apply(SnippetMutation::Update(EditableSnippet {
+            label: "Updated".to_owned(),
+            replace: "Updated content".to_owned(),
+            ..added.clone()
+        })));
+        let updated = store
+            .load()
+            .unwrap()
+            .into_iter()
+            .find(|snippet| snippet.source_index == added.source_index)
+            .unwrap();
+        assert_eq!(updated.label, "Updated");
+        assert_eq!(updated.replace, "Updated content");
+
+        assert!(store.apply(SnippetMutation::Delete(updated.source_index)));
+        assert!(!store
+            .load()
+            .unwrap()
+            .iter()
+            .any(|snippet| snippet.label == "Updated"));
     }
 }

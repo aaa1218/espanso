@@ -263,6 +263,19 @@ extern "C" {
             result: *mut c_void,
         ),
         result: *mut c_void,
+        load_snippets_callback: extern "C" fn(app: *mut c_void, data: *mut c_void),
+        mutate_snippet_callback: extern "C" fn(
+            operation: c_int,
+            snippet: *const SnippetMetadata,
+            data: *mut c_void,
+        ) -> c_int,
+        snippet_data: *mut c_void,
+    );
+
+    pub(crate) fn interop_update_settings_snippets(
+        app: *mut c_void,
+        snippets: *const SnippetMetadata,
+        snippets_count: c_int,
     );
 
     // WIZARD
