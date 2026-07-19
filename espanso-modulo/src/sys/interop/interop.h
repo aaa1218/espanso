@@ -108,6 +108,9 @@ typedef struct SettingsMetadata {
     const SnippetMetadata *snippets;
     const int snippets_count;
     const char *search_shortcut;
+    const char *snippet_capture_shortcut;
+    const char *double_tap_key;
+    const char *double_tap_action;
     const int show_icon;
     const int show_notifications;
     const int auto_restart;

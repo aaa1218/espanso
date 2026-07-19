@@ -25,6 +25,7 @@ use espanso_engine::event::EventType;
 
 use super::context::Context;
 
+mod capture;
 mod debug;
 mod process;
 mod search;
@@ -67,6 +68,10 @@ pub fn get_builtin_matches(config: &dyn Config) -> Vec<BuiltInMatch> {
             config.search_trigger(),
             config.search_shortcut(),
         ));
+    }
+
+    if let Some(shortcut) = config.snippet_capture_shortcut() {
+        matches.push(capture::create_capture_selection_match(shortcut));
     }
 
     matches

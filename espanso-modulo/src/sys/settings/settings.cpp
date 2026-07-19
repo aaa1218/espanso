@@ -19,6 +19,7 @@
 
 #include <wx/listctrl.h>
 #include <wx/notebook.h>
+#include <wx/choice.h>
 
 const wxColour SETTINGS_DARK_BG = wxColour(32, 33, 36);
 const wxColour SETTINGS_DARK_CONTROL_BG = wxColour(43, 45, 48);
@@ -27,6 +28,9 @@ const wxColour SETTINGS_DARK_TEXT = wxColour(245, 245, 245);
 typedef void (*SettingsResultCallback)(const SnippetMetadata *snippets,
                                        int snippets_count,
                                        const char *search_shortcut,
+                                       const char *snippet_capture_shortcut,
+                                       const char *double_tap_key,
+                                       const char *double_tap_action,
                                        int show_icon,
                                        int show_notifications,
                                        int auto_restart, void *result);
@@ -136,6 +140,9 @@ class SettingsFrame : public wxFrame {
     wxButton *editButton = nullptr;
     wxButton *deleteButton = nullptr;
     wxTextCtrl *searchShortcut = nullptr;
+    wxTextCtrl *snippetCaptureShortcut = nullptr;
+    wxTextCtrl *doubleTapKey = nullptr;
+    wxChoice *doubleTapAction = nullptr;
     wxCheckBox *showIcon = nullptr;
     wxCheckBox *showNotifications = nullptr;
     wxCheckBox *autoRestart = nullptr;
@@ -209,6 +216,43 @@ SettingsFrame::SettingsFrame()
         wxString::FromUTF8(settings_metadata->search_shortcut));
     settingsFields->Add(shortcutLabel, 0, wxALIGN_CENTER_VERTICAL);
     settingsFields->Add(searchShortcut, 1, wxEXPAND);
+
+    wxStaticText *captureShortcutLabel = new wxStaticText(
+        settingsPage, wxID_ANY, wxT("Capture selection shortcut"));
+    snippetCaptureShortcut = new wxTextCtrl(
+        settingsPage, wxID_ANY,
+        wxString::FromUTF8(settings_metadata->snippet_capture_shortcut));
+    settingsFields->Add(captureShortcutLabel, 0, wxALIGN_CENTER_VERTICAL);
+    settingsFields->Add(snippetCaptureShortcut, 1, wxEXPAND);
+
+    wxStaticText *doubleTapKeyLabel = new wxStaticText(
+        settingsPage, wxID_ANY,
+        wxT("Double-tap key (NONCONVERT, CapsLock, F1-F12)"));
+    doubleTapKey = new wxTextCtrl(
+        settingsPage, wxID_ANY,
+        wxString::FromUTF8(settings_metadata->double_tap_key));
+    settingsFields->Add(doubleTapKeyLabel, 0, wxALIGN_CENTER_VERTICAL);
+    settingsFields->Add(doubleTapKey, 1, wxEXPAND);
+
+    wxStaticText *doubleTapActionLabel = new wxStaticText(
+        settingsPage, wxID_ANY, wxT("Double-tap action"));
+    wxArrayString doubleTapActions;
+    doubleTapActions.Add(wxT("Off"));
+    doubleTapActions.Add(wxT("Search snippets"));
+    doubleTapActions.Add(wxT("Capture selection"));
+    doubleTapAction = new wxChoice(settingsPage, wxID_ANY, wxDefaultPosition,
+                                   wxDefaultSize, doubleTapActions);
+    const wxString configuredDoubleTapAction =
+        wxString::FromUTF8(settings_metadata->double_tap_action).Upper();
+    if (configuredDoubleTapAction == wxT("SEARCH")) {
+        doubleTapAction->SetSelection(1);
+    } else if (configuredDoubleTapAction == wxT("CAPTURE_SELECTION")) {
+        doubleTapAction->SetSelection(2);
+    } else {
+        doubleTapAction->SetSelection(0);
+    }
+    settingsFields->Add(doubleTapActionLabel, 0, wxALIGN_CENTER_VERTICAL);
+    settingsFields->Add(doubleTapAction, 1, wxEXPAND);
     settingsRoot->Add(settingsFields, 0, wxEXPAND | wxALL, 20);
 
     showIcon = new wxCheckBox(settingsPage, wxID_ANY, wxT("Show tray icon"));
@@ -248,7 +292,13 @@ SettingsFrame::SettingsFrame()
         ApplyDarkControl(filter);
         ApplyDarkControl(snippetList);
         ApplyDarkControl(searchShortcut);
+        ApplyDarkControl(snippetCaptureShortcut);
+        ApplyDarkControl(doubleTapKey);
+        ApplyDarkControl(doubleTapAction);
         shortcutLabel->SetForegroundColour(SETTINGS_DARK_TEXT);
+        captureShortcutLabel->SetForegroundColour(SETTINGS_DARK_TEXT);
+        doubleTapKeyLabel->SetForegroundColour(SETTINGS_DARK_TEXT);
+        doubleTapActionLabel->SetForegroundColour(SETTINGS_DARK_TEXT);
         showIcon->SetForegroundColour(SETTINGS_DARK_TEXT);
         showNotifications->SetForegroundColour(SETTINGS_DARK_TEXT);
         autoRestart->SetForegroundColour(SETTINGS_DARK_TEXT);
@@ -338,12 +388,6 @@ void SettingsFrame::OnAdd(wxCommandEvent &) {
     if (dialog.ShowModal() != wxID_OK) {
         return;
     }
-    if (dialog.GetSnippetTrigger().empty()) {
-        wxMessageBox(wxT("Trigger is required."), wxT("Espanso Settings"),
-                     wxOK | wxICON_WARNING, this);
-        return;
-    }
-
     const std::string triggerValue = dialog.GetSnippetTrigger();
     const std::string labelValue =
         dialog.GetSnippetLabel().empty() ? triggerValue
@@ -364,12 +408,6 @@ void SettingsFrame::OnEdit(wxCommandEvent &) {
     if (dialog.ShowModal() != wxID_OK) {
         return;
     }
-    if (dialog.GetSnippetTrigger().empty()) {
-        wxMessageBox(wxT("Trigger is required."), wxT("Espanso Settings"),
-                     wxOK | wxICON_WARNING, this);
-        return;
-    }
-
     snippet.label = dialog.GetSnippetLabel().empty()
                         ? dialog.GetSnippetTrigger()
                         : dialog.GetSnippetLabel();
@@ -403,8 +441,20 @@ void SettingsFrame::OnSave(wxCommandEvent &) {
     }
 
     const std::string shortcut = ToUtf8(searchShortcut->GetValue());
+    const std::string captureShortcut =
+        ToUtf8(snippetCaptureShortcut->GetValue());
+    const std::string configuredDoubleTapKey = ToUtf8(doubleTapKey->GetValue());
+    const char *configuredDoubleTapAction = "OFF";
+    if (doubleTapAction->GetSelection() == 1) {
+        configuredDoubleTapAction = "SEARCH";
+    } else if (doubleTapAction->GetSelection() == 2) {
+        configuredDoubleTapAction = "CAPTURE_SELECTION";
+    }
     settings_result_callback(metadata.data(), static_cast<int>(metadata.size()),
-                             shortcut.c_str(), showIcon->GetValue() ? 1 : 0,
+                             shortcut.c_str(), captureShortcut.c_str(),
+                             configuredDoubleTapKey.c_str(),
+                             configuredDoubleTapAction,
+                             showIcon->GetValue() ? 1 : 0,
                              showNotifications->GetValue() ? 1 : 0,
                              autoRestart->GetValue() ? 1 : 0,
                              settings_result_data);

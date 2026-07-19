@@ -24,3 +24,4 @@ pub mod matcher;
 pub mod multiplex;
 pub mod open_config;
 pub mod render;
+pub mod snippet_capture;

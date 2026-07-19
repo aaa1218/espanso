@@ -101,6 +101,15 @@ pub struct YAMLConfig {
     pub search_shortcut: Option<String>,
 
     #[serde(default)]
+    pub snippet_capture_shortcut: Option<String>,
+
+    #[serde(default)]
+    pub double_tap_key: Option<String>,
+
+    #[serde(default)]
+    pub double_tap_action: Option<String>,
+
+    #[serde(default)]
     pub undo_backspace: Option<bool>,
 
     #[serde(default)]
@@ -226,6 +235,9 @@ impl TryFrom<YAMLConfig> for ParsedConfig {
             }),
             search_trigger: yaml_config.search_trigger,
             search_shortcut: yaml_config.search_shortcut,
+            snippet_capture_shortcut: yaml_config.snippet_capture_shortcut,
+            double_tap_key: yaml_config.double_tap_key,
+            double_tap_action: yaml_config.double_tap_action,
             undo_backspace: yaml_config.undo_backspace,
 
             show_icon: yaml_config.show_icon,
@@ -302,6 +314,9 @@ mod tests {
       options: test_options
     search_trigger: "search"
     search_shortcut: "CTRL+SPACE"
+    snippet_capture_shortcut: "CTRL+ALT+S"
+    double_tap_key: "NONCONVERT"
+    double_tap_action: "SEARCH"
     undo_backspace: false
     show_icon: false
     show_notifications: false
@@ -363,6 +378,9 @@ mod tests {
                 keyboard_layout: Some(keyboard_layout),
                 search_trigger: Some("search".to_owned()),
                 search_shortcut: Some("CTRL+SPACE".to_owned()),
+                snippet_capture_shortcut: Some("CTRL+ALT+S".to_owned()),
+                double_tap_key: Some("NONCONVERT".to_owned()),
+                double_tap_action: Some("SEARCH".to_owned()),
                 undo_backspace: Some(false),
                 show_icon: Some(false),
                 show_notifications: Some(false),

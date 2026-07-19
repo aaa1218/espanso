@@ -9,25 +9,18 @@
  * (at your option) any later version.
  */
 
-#[cfg(feature = "modulo")]
-use std::{
-    collections::HashMap,
-    io::Write,
-    path::{Path, PathBuf},
-};
+use std::{collections::HashMap, io::Write, path::Path};
 
 #[cfg(feature = "modulo")]
+use std::path::PathBuf;
+
 use anyhow::{Context, Result};
-#[cfg(feature = "modulo")]
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "modulo")]
 use serde_norway::Value;
-#[cfg(feature = "modulo")]
 use tempfile::NamedTempFile;
 
 use super::{CliModule, CliModuleArgs};
 
-#[cfg(feature = "modulo")]
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 struct MatchDocument {
     #[serde(default)]
@@ -37,7 +30,6 @@ struct MatchDocument {
     extra: HashMap<String, Value>,
 }
 
-#[cfg(feature = "modulo")]
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 struct MatchEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -52,12 +44,15 @@ struct MatchEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     replace: Option<Value>,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    search_terms: Option<Vec<String>>,
+
     #[serde(flatten)]
     extra: HashMap<String, Value>,
 }
 
-#[cfg(feature = "modulo")]
 impl MatchEntry {
+    #[cfg(feature = "modulo")]
     fn primary_trigger(&self) -> String {
         self.trigger
             .clone()
@@ -75,6 +70,7 @@ impl MatchEntry {
             .unwrap_or_default()
     }
 
+    #[cfg(feature = "modulo")]
     fn replacement(&self) -> String {
         self.replace
             .as_ref()
@@ -83,25 +79,36 @@ impl MatchEntry {
             .to_owned()
     }
 
+    #[cfg(feature = "modulo")]
     fn is_editable(&self) -> bool {
         let has_single_trigger = self.trigger.is_some()
             || self
                 .triggers
                 .as_ref()
                 .is_some_and(|triggers| triggers.len() == 1);
-        has_single_trigger && self.replace.as_ref().is_some_and(Value::is_string)
+        let has_no_cause =
+            self.trigger.is_none() && self.triggers.is_none() && !self.extra.contains_key("regex");
+        (has_single_trigger || has_no_cause) && self.replace.as_ref().is_some_and(Value::is_string)
     }
 
+    #[cfg(feature = "modulo")]
     fn update_from(&mut self, snippet: &espanso_modulo::settings::EditableSnippet) {
         self.label = Some(snippet.label.clone());
-        if let Some(trigger) = self.trigger.as_mut() {
-            *trigger = snippet.trigger.clone();
+        if self.trigger.is_some() {
+            self.trigger = (!snippet.trigger.is_empty()).then(|| snippet.trigger.clone());
         } else if let Some(triggers) = self.triggers.as_mut() {
             if triggers.len() == 1 {
-                triggers[0] = snippet.trigger.clone();
+                if snippet.trigger.is_empty() {
+                    self.triggers = None;
+                } else {
+                    triggers[0] = snippet.trigger.clone();
+                }
             }
+        } else if !snippet.trigger.is_empty() {
+            self.trigger = Some(snippet.trigger.clone());
         }
         self.replace = Some(Value::String(snippet.replace.clone()));
+        self.search_terms = Some(vec![snippet.replace.clone()]);
     }
 }
 
@@ -110,6 +117,15 @@ impl MatchEntry {
 struct ConfigDocument {
     #[serde(skip_serializing_if = "Option::is_none")]
     search_shortcut: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    snippet_capture_shortcut: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    double_tap_key: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    double_tap_action: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     show_icon: Option<bool>,
@@ -193,6 +209,15 @@ fn run_settings(config_root: &Path, runtime_dir: &Path) -> Result<()> {
             .search_shortcut
             .clone()
             .unwrap_or_else(|| "ALT+SPACE".to_owned()),
+        snippet_capture_shortcut: config_document
+            .snippet_capture_shortcut
+            .clone()
+            .unwrap_or_else(|| "CTRL+ALT+S".to_owned()),
+        double_tap_key: config_document.double_tap_key.clone().unwrap_or_default(),
+        double_tap_action: config_document
+            .double_tap_action
+            .clone()
+            .unwrap_or_else(|| "OFF".to_owned()),
         show_icon: config_document.show_icon.unwrap_or(true),
         show_notifications: config_document.show_notifications.unwrap_or(true),
         auto_restart: config_document.auto_restart.unwrap_or(true),
@@ -219,7 +244,7 @@ fn run_settings(config_root: &Path, runtime_dir: &Path) -> Result<()> {
             } else {
                 Ok(MatchEntry {
                     label: Some(snippet.label),
-                    trigger: Some(snippet.trigger),
+                    trigger: (!snippet.trigger.is_empty()).then_some(snippet.trigger),
                     replace: Some(Value::String(snippet.replace)),
                     ..Default::default()
                 })
@@ -228,6 +253,9 @@ fn run_settings(config_root: &Path, runtime_dir: &Path) -> Result<()> {
         .collect::<Result<Vec<_>>>()?;
 
     config_document.search_shortcut = Some(result.search_shortcut);
+    config_document.snippet_capture_shortcut = Some(result.snippet_capture_shortcut);
+    config_document.double_tap_key = Some(result.double_tap_key);
+    config_document.double_tap_action = Some(result.double_tap_action);
     config_document.show_icon = Some(result.show_icon);
     config_document.show_notifications = Some(result.show_notifications);
     config_document.auto_restart = Some(result.auto_restart);
@@ -235,6 +263,48 @@ fn run_settings(config_root: &Path, runtime_dir: &Path) -> Result<()> {
     write_yaml_atomically(&match_path, &match_document)?;
     write_yaml_atomically(&config_path, &config_document)?;
     Ok(())
+}
+
+pub(crate) fn append_captured_snippet(config_root: &Path, text: &str) -> Result<bool> {
+    if text.trim().is_empty() {
+        return Ok(false);
+    }
+
+    crate::config::populate_default_config(config_root)?;
+    let match_path = config_root.join("match").join("base.yml");
+    let mut document: MatchDocument = read_yaml(&match_path)?;
+    if document.matches.iter().any(|entry| {
+        entry.trigger.is_none()
+            && entry.triggers.is_none()
+            && entry.replace.as_ref().and_then(Value::as_str) == Some(text)
+    }) {
+        return Ok(false);
+    }
+
+    document.matches.push(MatchEntry {
+        label: Some(captured_snippet_label(text)),
+        replace: Some(Value::String(text.to_owned())),
+        search_terms: Some(vec![text.to_owned()]),
+        ..Default::default()
+    });
+    write_yaml_atomically(&match_path, &document)?;
+    Ok(true)
+}
+
+fn captured_snippet_label(text: &str) -> String {
+    const MAX_LABEL_CHARS: usize = 60;
+    let first_line = text
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or(text)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let mut label: String = first_line.chars().take(MAX_LABEL_CHARS).collect();
+    if first_line.chars().count() > MAX_LABEL_CHARS {
+        label.push('…');
+    }
+    label
 }
 
 #[cfg(feature = "modulo")]
@@ -247,7 +317,6 @@ fn resolve_default_config_path(config_root: &Path) -> PathBuf {
     }
 }
 
-#[cfg(feature = "modulo")]
 fn read_yaml<T>(path: &Path) -> Result<T>
 where
     T: for<'de> Deserialize<'de>,
@@ -257,7 +326,6 @@ where
     serde_norway::from_str(&content).with_context(|| format!("unable to parse {}", path.display()))
 }
 
-#[cfg(feature = "modulo")]
 fn write_yaml_atomically<T>(path: &Path, document: &T) -> Result<()>
 where
     T: Serialize,
@@ -317,5 +385,35 @@ matches:
         let document: MatchDocument = serde_norway::from_str(input).unwrap();
         assert!(!document.matches[0].is_editable());
         assert!(!document.matches[1].is_editable());
+    }
+
+    #[test]
+    fn captured_snippet_label_uses_first_non_empty_line_and_truncates_safely() {
+        let text = format!("\n  {}\nsecond", "あ".repeat(70));
+        let label = captured_snippet_label(&text);
+        assert_eq!(label.chars().count(), 61);
+        assert!(label.ends_with('…'));
+    }
+
+    #[test]
+    fn captured_snippet_is_search_only_and_duplicates_are_ignored() {
+        let directory = tempfile::tempdir().unwrap();
+        assert!(append_captured_snippet(directory.path(), "First line\nSecond line").unwrap());
+        assert!(!append_captured_snippet(directory.path(), "First line\nSecond line").unwrap());
+
+        let document: MatchDocument =
+            read_yaml(&directory.path().join("match").join("base.yml")).unwrap();
+        let captured = document.matches.last().unwrap();
+        assert_eq!(captured.label.as_deref(), Some("First line"));
+        assert!(captured.trigger.is_none());
+        assert!(captured.triggers.is_none());
+        assert_eq!(
+            captured.replace.as_ref().and_then(Value::as_str),
+            Some("First line\nSecond line")
+        );
+        assert_eq!(
+            captured.search_terms.as_deref(),
+            Some(["First line\nSecond line".to_owned()].as_slice())
+        );
     }
 }

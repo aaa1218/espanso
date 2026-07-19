@@ -103,6 +103,7 @@ pub enum EventType {
     ShowConfigFolder,
     ShowSettings,
     ShowSearchBar,
+    CaptureSelection,
     ShowText(ui::ShowTextEvent),
     ShowLogs,
 

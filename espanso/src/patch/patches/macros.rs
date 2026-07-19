@@ -83,6 +83,18 @@ macro_rules! generate_patchable_config {
           self.base.search_shortcut()
         }
 
+        fn snippet_capture_shortcut(&self) -> Option<String> {
+          self.base.snippet_capture_shortcut()
+        }
+
+        fn double_tap_key(&self) -> Option<String> {
+          self.base.double_tap_key()
+        }
+
+        fn double_tap_action(&self) -> Option<String> {
+          self.base.double_tap_action()
+        }
+
         fn show_icon(&self) -> bool {
           self.base.show_icon()
         }

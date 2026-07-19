@@ -33,6 +33,16 @@
 # Enable/disable the config auto-reload after a file change is detected.
 # auto_restart: false
 
+# --- Snippet capture
+
+# Capture selected text as a search-only snippet without opening a dialog.
+# snippet_capture_shortcut: CTRL+ALT+S
+
+# Configure an optional double-tap shortcut independently from snippet capture.
+# Supported actions: OFF, SEARCH, CAPTURE_SELECTION
+# double_tap_key: NONCONVERT
+# double_tap_action: OFF
+
 # --- Clipboard threshold
 
 # Because injecting long texts char-by-char is a slow operation, espanso automatically

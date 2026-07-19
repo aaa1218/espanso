@@ -17,16 +17,22 @@
  * along with espanso.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::thread::JoinHandle;
+use std::{thread::JoinHandle, time::Duration};
 
 use crate::path::Paths;
 use anyhow::Result;
 use crossbeam::channel::Receiver;
 use espanso_clipboard::ClipboardOptions;
-use espanso_config::{config::ConfigStore, matches::store::MatchStore};
+use espanso_config::{
+    config::{Config, ConfigStore},
+    matches::store::MatchStore,
+};
 use espanso_detect::SourceCreationOptions;
-use espanso_engine::event::{EventType, ExitMode};
-use espanso_inject::{InjectorCreationOptions, KeyboardStateProvider};
+use espanso_engine::{
+    event::{input::Key as EngineKey, EventType, ExitMode},
+    process::{DoubleTapAction, DoubleTapOptions},
+};
+use espanso_inject::{InjectionOptions, InjectorCreationOptions, KeyboardStateProvider};
 use espanso_ui::{event::UIEvent, UIRemote};
 use log::{debug, error, info, warn};
 
@@ -57,6 +63,7 @@ use crate::{
                     },
                     RendererAdapter,
                 },
+                snippet_capture::SnippetCapturerAdapter,
             },
         },
         match_cache::{CombinedMatchCache, MatchCache},
@@ -231,6 +238,20 @@ pub fn initialize_and_spawn(
                 process::middleware::disable::extract_disable_options(&*config_manager.default());
 
             let notification_manager = NotificationManager::new(&*ui_remote, default_config);
+            let snippet_capturer = SnippetCapturerAdapter::new(
+                &*injector,
+                &*clipboard,
+                &paths.config,
+                InjectionOptions {
+                    evdev_modifier_delay: default_config.evdev_modifier_delay().unwrap_or(10)
+                        as u32,
+                    x11_use_xdotool_fallback: default_config.x11_use_xdotool_backend(),
+                    ..Default::default()
+                },
+                espanso_clipboard::ClipboardOperationOptions {
+                    use_xclip_backend: default_config.x11_use_xclip_backend(),
+                },
+            );
 
             let mut processor = espanso_engine::process::default(
                 &matchers,
@@ -252,6 +273,8 @@ pub fn initialize_and_spawn(
                 &combined_match_cache,
                 &notification_manager,
                 &config_manager,
+                &snippet_capturer,
+                extract_double_tap_options(default_config),
             );
 
             let event_injector = EventInjectorAdapter::new(&*injector, &config_manager);
@@ -316,6 +339,55 @@ pub fn initialize_and_spawn(
         })?;
 
     Ok(handle)
+}
+
+fn extract_double_tap_options(config: &dyn Config) -> DoubleTapOptions {
+    let action = match config.double_tap_action().as_deref() {
+        Some(action) if action.eq_ignore_ascii_case("SEARCH") => Some(DoubleTapAction::Search),
+        Some(action) if action.eq_ignore_ascii_case("CAPTURE_SELECTION") => {
+            Some(DoubleTapAction::CaptureSelection)
+        }
+        Some(action) if !action.eq_ignore_ascii_case("OFF") => {
+            warn!("unsupported double_tap_action: {action}");
+            None
+        }
+        _ => None,
+    };
+    let key = action.and_then(|_| {
+        config
+            .double_tap_key()
+            .as_deref()
+            .and_then(parse_double_tap_key)
+    });
+
+    DoubleTapOptions {
+        key,
+        action,
+        interval: Duration::from_millis(300),
+    }
+}
+
+fn parse_double_tap_key(key: &str) -> Option<EngineKey> {
+    match key.to_ascii_uppercase().as_str() {
+        "NONCONVERT" if cfg!(target_os = "windows") => Some(EngineKey::Other(0x1d)),
+        "CAPSLOCK" => Some(EngineKey::CapsLock),
+        "F1" => Some(EngineKey::F1),
+        "F2" => Some(EngineKey::F2),
+        "F3" => Some(EngineKey::F3),
+        "F4" => Some(EngineKey::F4),
+        "F5" => Some(EngineKey::F5),
+        "F6" => Some(EngineKey::F6),
+        "F7" => Some(EngineKey::F7),
+        "F8" => Some(EngineKey::F8),
+        "F9" => Some(EngineKey::F9),
+        "F10" => Some(EngineKey::F10),
+        "F11" => Some(EngineKey::F11),
+        "F12" => Some(EngineKey::F12),
+        unsupported => {
+            warn!("unsupported double_tap_key: {unsupported}");
+            None
+        }
+    }
 }
 
 fn grant_linux_capabilities(use_evdev_backend: bool) -> bool {

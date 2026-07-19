@@ -55,6 +55,12 @@ pub fn show(options: SettingsOptions) -> Option<SettingsResult> {
         convert_to_cstring_or_null(options.window_icon_path);
     let search_shortcut = CString::new(options.search_shortcut)
         .expect("unable to convert search shortcut to CString");
+    let snippet_capture_shortcut = CString::new(options.snippet_capture_shortcut)
+        .expect("unable to convert snippet capture shortcut to CString");
+    let double_tap_key =
+        CString::new(options.double_tap_key).expect("unable to convert double-tap key to CString");
+    let double_tap_action = CString::new(options.double_tap_action)
+        .expect("unable to convert double-tap action to CString");
     let owned_snippets: Vec<OwnedSnippet> = options
         .snippets
         .into_iter()
@@ -68,6 +74,9 @@ pub fn show(options: SettingsOptions) -> Option<SettingsResult> {
         snippets: snippets.as_ptr(),
         snippets_count: snippets.len() as c_int,
         search_shortcut: search_shortcut.as_ptr(),
+        snippet_capture_shortcut: snippet_capture_shortcut.as_ptr(),
+        double_tap_key: double_tap_key.as_ptr(),
+        double_tap_action: double_tap_action.as_ptr(),
         show_icon: i32::from(options.show_icon),
         show_notifications: i32::from(options.show_notifications),
         auto_restart: i32::from(options.auto_restart),
@@ -79,6 +88,9 @@ pub fn show(options: SettingsOptions) -> Option<SettingsResult> {
         snippets: *const SnippetMetadata,
         snippets_count: c_int,
         search_shortcut: *const c_char,
+        snippet_capture_shortcut: *const c_char,
+        double_tap_key: *const c_char,
+        double_tap_action: *const c_char,
         show_icon: c_int,
         show_notifications: c_int,
         auto_restart: c_int,
@@ -108,6 +120,15 @@ pub fn show(options: SettingsOptions) -> Option<SettingsResult> {
         let settings_result = SettingsResult {
             snippets,
             search_shortcut: unsafe { CStr::from_ptr(search_shortcut) }
+                .to_string_lossy()
+                .into_owned(),
+            snippet_capture_shortcut: unsafe { CStr::from_ptr(snippet_capture_shortcut) }
+                .to_string_lossy()
+                .into_owned(),
+            double_tap_key: unsafe { CStr::from_ptr(double_tap_key) }
+                .to_string_lossy()
+                .into_owned(),
+            double_tap_action: unsafe { CStr::from_ptr(double_tap_action) }
                 .to_string_lossy()
                 .into_owned(),
             show_icon: show_icon == 1,

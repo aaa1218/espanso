@@ -27,6 +27,7 @@ use super::{
         cursor_hint::CursorHintMiddleware,
         delay_modifiers::{DelayForModifierReleaseMiddleware, ModifierStatusProvider},
         discard::EventsDiscardMiddleware,
+        double_tap::{DoubleTapMiddleware, DoubleTapOptions},
         markdown::MarkdownMiddleware,
         match_select::MatchSelectMiddleware,
         matcher::MatcherMiddleware,
@@ -34,6 +35,7 @@ use super::{
         open_config::ConfigMiddleware,
         open_config::ConfigPathProvider,
         render::RenderMiddleware,
+        snippet_capture::{SnippetCaptureMiddleware, SnippetCapturer},
         stats::StatsMiddleware,
     },
     AltCodeSynthEnabledProvider, DisableOptions, EnabledStatusProvider, MatchFilter,
@@ -80,6 +82,8 @@ impl<'a> DefaultProcessor<'a> {
         match_resolver: &'a dyn MatchResolver,
         notification_manager: &'a dyn NotificationManager,
         alt_code_synth_enabled_provider: &'a dyn AltCodeSynthEnabledProvider,
+        snippet_capturer: &'a dyn SnippetCapturer,
+        double_tap_options: DoubleTapOptions,
     ) -> Self {
         Self {
             event_queue: VecDeque::new(),
@@ -90,6 +94,7 @@ impl<'a> DefaultProcessor<'a> {
                 Box::new(AltCodeSynthesizerMiddleware::new(
                     alt_code_synth_enabled_provider,
                 )),
+                Box::new(DoubleTapMiddleware::new(double_tap_options)),
                 Box::new(MatcherMiddleware::new(
                     matchers,
                     matcher_options_provider,
@@ -123,6 +128,7 @@ impl<'a> DefaultProcessor<'a> {
                 Box::new(DelayForModifierReleaseMiddleware::new(
                     modifier_status_provider,
                 )),
+                Box::new(SnippetCaptureMiddleware::new(snippet_capturer)),
             ],
         }
     }

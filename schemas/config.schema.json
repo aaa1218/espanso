@@ -91,6 +91,19 @@
       "description": "Hotkey used to show the Search UI.",
       "type": "string"
     },
+    "snippet_capture_shortcut": {
+      "description": "Hotkey used to capture the selected text as a search-only snippet. Set to OFF to disable it.",
+      "type": "string"
+    },
+    "double_tap_key": {
+      "description": "Key used by the optional double-tap shortcut. Windows supports NONCONVERT.",
+      "type": "string"
+    },
+    "double_tap_action": {
+      "description": "Action executed by the optional double-tap shortcut.",
+      "type": "string",
+      "enum": ["OFF", "SEARCH", "CAPTURE_SELECTION"]
+    },
     "search_trigger": {
       "description": "Trigger used to show the Search UI.",
       "type": "string"

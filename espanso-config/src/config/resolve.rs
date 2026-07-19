@@ -290,6 +290,26 @@ impl Config for ResolvedConfig {
         }
     }
 
+    fn snippet_capture_shortcut(&self) -> Option<String> {
+        match self.parsed.snippet_capture_shortcut.as_deref() {
+            Some(shortcut)
+                if shortcut.trim().is_empty() || shortcut.eq_ignore_ascii_case("OFF") =>
+            {
+                None
+            }
+            Some(shortcut) => Some(shortcut.to_owned()),
+            None => Some("CTRL+ALT+S".to_owned()),
+        }
+    }
+
+    fn double_tap_key(&self) -> Option<String> {
+        self.parsed.double_tap_key.clone()
+    }
+
+    fn double_tap_action(&self) -> Option<String> {
+        self.parsed.double_tap_action.clone()
+    }
+
     fn undo_backspace(&self) -> bool {
         self.parsed.undo_backspace.unwrap_or(true)
     }
@@ -441,6 +461,9 @@ impl ResolvedConfig {
             keyboard_layout,
             search_trigger,
             search_shortcut,
+            snippet_capture_shortcut,
+            double_tap_key,
+            double_tap_action,
             undo_backspace,
             show_icon,
             show_notifications,

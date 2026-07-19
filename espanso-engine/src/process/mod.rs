@@ -37,6 +37,7 @@ pub use middleware::action::{EventSequenceProvider, MatchInfoProvider};
 pub use middleware::alt_code_synthesizer::AltCodeSynthEnabledProvider;
 pub use middleware::delay_modifiers::ModifierStatusProvider;
 pub use middleware::disable::DisableOptions;
+pub use middleware::double_tap::{DoubleTapAction, DoubleTapOptions};
 pub use middleware::image_resolve::PathProvider;
 pub use middleware::match_exec::MatchResolver;
 pub use middleware::match_select::{MatchFilter, MatchSelector};
@@ -49,6 +50,7 @@ pub use middleware::notification::NotificationManager;
 pub use middleware::open_config::ConfigPathProvider;
 pub use middleware::render::{Renderer, RendererError};
 pub use middleware::search::MatchProvider;
+pub use middleware::snippet_capture::SnippetCapturer;
 pub use middleware::stats::{set_global_recorder, StatsRecord, StatsRecorder};
 pub use middleware::suppress::EnabledStatusProvider;
 pub use middleware::undo::UndoEnabledProvider;
@@ -74,6 +76,8 @@ pub fn default<'a, MatcherState>(
     match_resolver: &'a dyn MatchResolver,
     notification_manager: &'a dyn NotificationManager,
     alt_code_synth_enabled_provider: &'a dyn AltCodeSynthEnabledProvider,
+    snippet_capturer: &'a dyn SnippetCapturer,
+    double_tap_options: DoubleTapOptions,
 ) -> impl Processor + 'a {
     default::DefaultProcessor::new(
         matchers,
@@ -95,5 +99,7 @@ pub fn default<'a, MatcherState>(
         match_resolver,
         notification_manager,
         alt_code_synth_enabled_provider,
+        snippet_capturer,
+        double_tap_options,
     )
 }

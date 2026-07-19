@@ -136,6 +136,13 @@ pub trait Config: Send + Sync {
     // Hotkey used to trigger the Search UI
     fn search_shortcut(&self) -> Option<String>;
 
+    // Hotkey used to capture the selected text as a search-only snippet
+    fn snippet_capture_shortcut(&self) -> Option<String>;
+
+    // Key and action used for configurable double-tap shortcuts
+    fn double_tap_key(&self) -> Option<String>;
+    fn double_tap_action(&self) -> Option<String>;
+
     // When enabled, espanso automatically "reverts" an expansion if the user
     // presses the Backspace key afterwards.
     fn undo_backspace(&self) -> bool;
@@ -236,6 +243,9 @@ pub trait Config: Send + Sync {
         backspace_limit: {}
         search_trigger: {:?}
         search_shortcut: {:?}
+        snippet_capture_shortcut: {:?}
+        double_tap_key: {:?}
+        double_tap_action: {:?}
         keyboard_layout: {:?}
 
         show_icon: {:?}
@@ -275,6 +285,9 @@ pub trait Config: Send + Sync {
           self.backspace_limit(),
           self.search_trigger(),
           self.search_shortcut(),
+          self.snippet_capture_shortcut(),
+          self.double_tap_key(),
+          self.double_tap_action(),
           self.keyboard_layout(),
 
           self.show_icon(),
