@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_dispatch:
   pull_request:
     paths-ignore:
       - ".devcontainer/**"
@@ -162,5 +163,13 @@ jobs:
       - name: Build
         run: |
           cargo build
+      - name: Test
+        run: |
+          cargo test \
+            --workspace \
+            --exclude espanso-modulo \
+            --exclude espanso-ipc \
+            --no-default-features \
+            --features native-tls
       - name: Clippy
         run: cargo clippy -- --deny warnings
